@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # RAG Chatbot Backend
+  backend:
+    build: .
+    container_name: rag-chatbot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=gemini
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=gemini-3-flash-preview
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - CHUNK_SIZE=500
+      - CHUNK_OVERLAP=100
+      - TOP_K=3
+      - CONFIDENCE_THRESHOLD=0.3
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./backend/vector_store:/app/backend/vector_store
+      - ./data:/app/data:ro  # Read-only mount for company data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Frontend (Simple HTTP server)
+  frontend:
+    image: nginx:alpine
+    container_name: rag-chatbot-frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: rag-chatbot-network
+
+volumes:
+  vector_store:
+    driver: local

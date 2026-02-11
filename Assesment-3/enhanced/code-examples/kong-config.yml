@@ -1,0 +1,189 @@
+# Kong API Gateway Configuration
+# Handles authentication, rate limiting, and routing
+
+_format_version: "3.0"
+
+services:
+  - name: social-service
+    url: http://social-service:8001
+    routes:
+      - name: social-webhooks
+        paths:
+          - /v1/webhook
+        methods: ["GET", "POST"]
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          policy: redis
+          redis_host: redis
+          redis_port: 6379
+      - name: cors
+        config:
+          origins: ["*"]
+          methods: ["GET", "POST", "OPTIONS"]
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 10 # 10MB max
+
+  - name: ai-service
+    url: http://ai-service:8002
+    routes:
+      - name: ai-endpoints
+        paths:
+          - /v1/ai
+        strip_path: false
+    plugins:
+      - name: jwt
+        config:
+          claims_to_verify: ["exp"]
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: redis
+          redis_host: redis
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-Service: ai-service
+
+  - name: crm-service
+    url: http://crm-service:8003
+    routes:
+      - name: crm-endpoints
+        paths:
+          - /v1/crm
+        strip_path: false
+    plugins:
+      - name: jwt
+        config:
+          claims_to_verify: ["exp"]
+      - name: rate-limiting
+        config:
+          minute: 30
+          policy: redis
+      - name: response-transformer
+        config:
+          remove:
+            headers:
+              - X-Internal-Token
+
+  - name: auth-service
+    url: http://auth-service:8004
+    routes:
+      - name: auth-endpoints
+        paths:
+          - /v1/auth
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins: ["*"]
+          credentials: true
+
+  - name: analytics-service
+    url: http://analytics-service:8005
+    routes:
+      - name: analytics-endpoints
+        paths:
+          - /v1/analytics
+        strip_path: false
+    plugins:
+      - name: jwt
+        config:
+          claims_to_verify: ["exp"]
+
+# Global plugins
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: true
+
+  - name: request-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid
+      echo_downstream: true
+
+# Consumers (API clients)
+consumers:
+  - username: web-app
+    custom_id: web-client-001
+    plugins:
+      - name: jwt
+        config:
+          key: web-app-key
+          secret: ${WEB_APP_JWT_SECRET}
+      - name: rate-limiting
+        config:
+          minute: 100
+
+  - username: mobile-app
+    custom_id: mobile-client-001
+    plugins:
+      - name: jwt
+        config:
+          key: mobile-app-key
+          secret: ${MOBILE_APP_JWT_SECRET}
+      - name: rate-limiting
+        config:
+          minute: 200 # Higher limit for mobile
+
+  - username: chrome-extension
+    custom_id: extension-client-001
+    plugins:
+      - name: jwt
+        config:
+          key: chrome-ext-key
+          secret: ${CHROME_EXT_JWT_SECRET}
+      - name: rate-limiting
+        config:
+          minute: 50
+
+# Upstreams (load balancing)
+upstreams:
+  - name: ai-service-upstream
+    algorithm: round-robin
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+    targets:
+      - target: ai-service-1:8002
+        weight: 100
+      - target: ai-service-2:8002
+        weight: 100
+      - target: ai-service-3:8002
+        weight: 100
+
+# Rate limiting tiers by tenant
+# Applied via custom plugin or ACL groups
+
+tier-configs:
+  free:
+    rate_limit_per_minute: 30
+    rate_limit_per_day: 1000
+    max_conversations: 50
+
+  pro:
+    rate_limit_per_minute: 100
+    rate_limit_per_day: 10000
+    max_conversations: 500
+
+  enterprise:
+    rate_limit_per_minute: 1000
+    rate_limit_per_day: 100000
+    max_conversations: unlimited
