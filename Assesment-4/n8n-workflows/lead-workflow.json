@@ -1,0 +1,128 @@
+{
+    "name": "Lead Processing (Fixed)",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "lead",
+                "responseMode": "responseNode"
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1.1,
+            "position": [
+                460,
+                240
+            ],
+            "webhookId": "lead-webhook"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=YOUR_GEMINI_API_KEY_HERE",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Analyze this lead. Extract 'intent' (Sales, Support, Spam), 'confidence' (0.0-1.0), and write a polite 'response'. Return ONLY raw JSON. Message: {{ $json.body.message }}\"\n    }]\n  }]\n}"
+            },
+            "id": "gemini-ai",
+            "name": "Gemini AI",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                680,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Extract raw text from Gemini\nconst raw = $input.item.json.candidates[0].content.parts[0].text;\n\n// Clean markdown if present\nconst cleanJson = raw.replace(/```json/g, \"\").replace(/```/g, \"\").trim();\n\n// Parse to object\nreturn JSON.parse(cleanJson);"
+            },
+            "id": "parse-json",
+            "name": "Parse JSON",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                900,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://lead-processing-api:8000/leads/store",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"message\": \"{{ $('Webhook Trigger').item.json.body.message }}\",\n  \"intent\": \"{{ $json.intent }}\",\n  \"confidence\": {{ $json.confidence }},\n  \"response\": \"{{ $json.response }}\",\n  \"source\": \"n8n-workflow\"\n}"
+            },
+            "id": "save-to-db",
+            "name": "Save to DB",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1120,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={\n  \"status\": \"success\",\n  \"lead_id\": {{ $json.lead_id }},\n  \"ai_reply\": \"{{ $('Parse JSON').item.json.response }}\"\n}"
+            },
+            "id": "respond-webhook",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1340,
+                240
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Gemini AI",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Gemini AI": {
+            "main": [
+                [
+                    {
+                        "node": "Parse JSON",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse JSON": {
+            "main": [
+                [
+                    {
+                        "node": "Save to DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save to DB": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

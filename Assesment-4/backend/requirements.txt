@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+python-multipart
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Development
+python-dotenv
+google-genai

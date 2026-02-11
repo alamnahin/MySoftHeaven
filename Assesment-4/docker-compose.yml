@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # Python Backend (Now acts as Data Service)
+  api:
+    build: ./backend
+    container_name: lead-processing-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./data/leads.db
+    volumes:
+      - ./backend/data:/app/data
+    restart: unless-stopped
+
+  # n8n (The New Orchestrator)
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n-orchestrator
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=password
+      # Allow n8n to call the api container by service name
+      - N8N_HOST=n8n
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - api
+
+volumes:
+  n8n_data:

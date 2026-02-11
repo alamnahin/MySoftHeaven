@@ -332,5 +332,5 @@ This is portfolio/assessment work provided as reference material.
 
 **Built with ❤️ for demonstrating production-ready AI/ML engineering skills**
 
-Last Updated: 2024
+Last Updated: 2026
  
