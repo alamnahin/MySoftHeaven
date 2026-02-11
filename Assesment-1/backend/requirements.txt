@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+python-multipart
+
+# Database
+sqlite3
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Development
+python-dotenv

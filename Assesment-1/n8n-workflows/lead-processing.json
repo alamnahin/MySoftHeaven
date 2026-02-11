@@ -1,0 +1,191 @@
+n8n_workflow = {
+    "name": "Lead Processing Workflow",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "lead-webhook",
+                "responseMode": "responseNode"
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "webhookId": "lead-webhook"
+        },
+        {
+            "parameters": {
+                "jsCode": """
+                // Simple validation node
+                const input = $input.first().json.body;
+                if (!input.message || input.message.length < 10) {
+                  return [
+                        {json: {error: "Invalid message", status: 400
+                            }
+                        }
+                    ];
+                }
+                return [
+                    {json: input
+                    }
+                ];
+                """
+            },
+            "name": "Validate Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gpt-3.5-turbo",
+                "options": {},
+                "messages": {
+                    "message": [
+                        {
+                            "role": "user",
+                            "content": "=Classify this lead: {{ $json.message }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Classify Intent",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": True,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
+                        {
+                            "id": "condition-1",
+                            "leftValue": "={{ $json.intent }}",
+                            "rightValue": "Spam",
+                            "operator": {
+                                "type": "string",
+                                "operation": "notEquals"
+                            }
+                        }
+                    ]
+                }
+            },
+            "name": "Filter Spam",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "resource": "database",
+                "operation": "executeQuery",
+                "query": "INSERT INTO leads (raw_message, intent, status) VALUES (?, ?, ?)",
+                "parameters": "={{ [$json.message, $json.intent, 'processed'] }}"
+            },
+            "name": "Save to DB",
+            "type": "n8n-nodes-base.postgres",
+            "typeVersion": 2,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ {\"status\": \"success\", \"lead_id\": $json.id} }}"
+            },
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1250,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Input": {
+            "main": [
+                [
+                    {
+                        "node": "Classify Intent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Classify Intent": {
+            "main": [
+                [
+                    {
+                        "node": "Filter Spam",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Filter Spam": {
+            "main": [
+                [
+                    {
+                        "node": "Save to DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save to DB": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}
