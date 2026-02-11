@@ -10,6 +10,13 @@ import httpx
 import asyncio
 from contextlib import asynccontextmanager
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# === NEW IMPORTS ===
+from google import genai
+from google.genai import types
 
 # Setup logging
 logging.basicConfig(
@@ -66,7 +73,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Lead Processing API",
     description="AI-powered lead classification and response system",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -78,17 +85,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration
+# === CONFIGURATION & CLIENT SETUP ===
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "your-api-key-here")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.5-flash")
 
-# Provider-specific configuration
+# Initialize Gemini Client
+gemini_client = None
 if LLM_PROVIDER == "gemini":
-    LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent")
-    LLM_MODEL = os.getenv("LLM_MODEL", "gemini-1.5-flash")
-else:  
-    LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "https://api.openai.com/v1/chat/completions")
-    LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+    if not LLM_API_KEY:
+        logger.warning("Gemini API Key is missing! Check your .env file.")
+    gemini_client = genai.Client(api_key=LLM_API_KEY)
+
+# OpenAI Config (Legacy support)
+OPENAI_ENDPOINT = os.getenv("LLM_ENDPOINT", "https://api.openai.com/v1/chat/completions")
 
 class LeadMessage(BaseModel):
     """Lead message model with validation"""
@@ -112,7 +122,7 @@ class LeadResponse(BaseModel):
     status: str
 
 class Database:
-    """Simple database wrapper with connection pooling consideration"""
+    """Simple database wrapper"""
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path
     
@@ -122,7 +132,6 @@ class Database:
         return conn
     
     def save_lead(self, data: dict) -> int:
-        """Save initial lead to database"""
         conn = self.get_conn()
         cursor = conn.cursor()
         cursor.execute('''
@@ -141,7 +150,6 @@ class Database:
         return lead_id
     
     def update_lead(self, lead_id: int, data: dict):
-        """Update lead with processed data"""
         conn = self.get_conn()
         cursor = conn.cursor()
         cursor.execute('''
@@ -160,7 +168,6 @@ class Database:
         conn.close()
     
     def increment_retry(self, lead_id: int):
-        """Track retry attempts"""
         conn = self.get_conn()
         cursor = conn.cursor()
         cursor.execute('''
@@ -171,7 +178,7 @@ class Database:
 
 db = Database()
 
-# Prompt engineering
+# === PROMPTS ===
 CLASSIFICATION_PROMPT = """You are a lead classification assistant. Analyze the following message and extract information.
 
 Message: {message}
@@ -214,79 +221,77 @@ Response must be concise and natural."""
 
 async def call_llm(prompt: str, max_retries: int = 3) -> dict:
     """
-    Call LLM with retry logic and error handling.
-    Supports both OpenAI and Gemini APIs.
+    Call LLM with retry logic.
+    Uses google-genai SDK for Gemini and httpx for OpenAI.
     """
-    if LLM_PROVIDER == "gemini":
-        # Gemini API format
-        url = f"{LLM_ENDPOINT}?key={LLM_API_KEY}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 500
-            }
-        }
-    else:
-        # OpenAI API format
-        url = LLM_ENDPOINT
-        headers = {
-            "Authorization": f"Bearer {LLM_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 500
-        }
-    
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    url, 
-                    headers=headers, 
-                    json=payload
+            content = ""
+            
+            if LLM_PROVIDER == "gemini":
+                # === NEW GEMINI SDK IMPLEMENTATION ===
+                if not gemini_client:
+                    return {"success": False, "error": "Gemini client not initialized"}
+                
+                # UPDATE: Added response_mime_type and increased tokens
+                response = await gemini_client.aio.models.generate_content(
+                    model=LLM_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=2000,  # Increased from 500 to prevent cutoff
+                        response_mime_type="application/json" # Force valid JSON
+                    )
                 )
-                response.raise_for_status()
-                result = response.json()
+                content = response.text
                 
-                # Extract content based on provider
-                if LLM_PROVIDER == "gemini":
-                    content = result['candidates'][0]['content']['parts'][0]['text']
-                else:  # openai
+            else:
+                # === EXISTING OPENAI IMPLEMENTATION ===
+                headers = {
+                    "Authorization": f"Bearer {LLM_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": LLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 1000 # Increased for safety
+                }
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        OPENAI_ENDPOINT, 
+                        headers=headers, 
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    result = response.json()
                     content = result['choices'][0]['message']['content']
+
+            # Common JSON parsing logic
+            try:
+                # Clean up markdown if present (Gemini often wraps in ```json ... ```)
+                cleaned_content = content.strip()
+                if '```json' in cleaned_content:
+                    cleaned_content = cleaned_content.split('```json')[1].split('```')[0]
+                elif '```' in cleaned_content:
+                    cleaned_content = cleaned_content.split('```')[1].split('```')[0]
                 
-                # Try to parse JSON from response
-                try:
-                    # Handle markdown code blocks
-                    if '```json' in content:
-                        content = content.split('```json')[1].split('```')[0]
-                    elif '```' in content:
-                        content = content.split('```')[1].split('```')[0]
-                    
-                    parsed = json.loads(content.strip())
-                    return {"success": True, "data": parsed}
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parse error: {e}, content: {content}")
-                    if attempt == max_retries - 1:
-                        return {"success": False, "error": "Invalid JSON from LLM"}
-                    
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout on attempt {attempt + 1}")
-            if attempt == max_retries - 1:
-                return {"success": False, "error": "LLM timeout"}
+                parsed = json.loads(cleaned_content.strip())
+                return {"success": True, "data": parsed}
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parse error: {e}, content: {content}")
+                if attempt == max_retries - 1:
+                    return {"success": False, "error": "Invalid JSON from LLM"}
+
         except Exception as e:
             logger.error(f"LLM call error: {e}")
             if attempt == max_retries - 1:
                 return {"success": False, "error": str(e)}
-        
-        # Exponential backoff 
-        wait_time = (2 ** attempt) + 1
-        logger.info(f"Retrying in {wait_time}s...")
-        await asyncio.sleep(wait_time)
+            
+            # Exponential backoff 
+            wait_time = (2 ** attempt) + 1
+            logger.info(f"Retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
     
     return {"success": False, "error": "Max retries exceeded"}
 
@@ -299,7 +304,7 @@ async def process_lead_async(lead_id: int, message: str):
         )
         
         if not classification_result["success"]:
-            logger.error(f"Classification failed: {classification_result['error']}")
+            logger.error(f"Classification failed: {classification_result.get('error')}")
             db.update_lead(lead_id, {
                 "status": "failed_classification",
                 "ai_response": "We encountered an issue processing your request. Our team will follow up manually."
@@ -329,7 +334,7 @@ async def process_lead_async(lead_id: int, message: str):
         
         if response_result["success"]:
             auto_response = response_result["data"]
-            # Handle both string and dict responses
+            # Handle both string and dict responses (sometimes LLM returns simple string if prompt isn't strict)
             if isinstance(auto_response, dict):
                 auto_response = auto_response.get("response", str(auto_response))
         else:
