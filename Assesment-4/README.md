@@ -6,7 +6,7 @@ An AI-driven automation workflow that classifies incoming leads, extracts struct
 **Architecture:**
 
 * **Orchestrator (The Brain):** n8n (running in Docker).
-* **Intelligence:** Google Gemini 1.5 Flash (via API).
+* **Intelligence:** Google gemini-3-flash-preview (via API).
 * **Database Service:** Python FastAPI + SQLite (Stores results).
 * **Containerization:** Docker Compose.
 

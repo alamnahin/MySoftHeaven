@@ -74,7 +74,7 @@ uvicorn main:app --reload
 
 ### 1. Intelligent Classification
 
-The system uses **Gemini 1.5 Flash** to categorize incoming messages into three distinct intents:
+The system uses **gemini-3-flash-preview** to categorize incoming messages into three distinct intents:
 
 * **Sales:** Inquiries about pricing, enterprise plans, or product features.
 * **Support:** Technical issues, bug reports, or help requests.
