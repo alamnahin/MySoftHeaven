@@ -1,6 +1,6 @@
 # Assessment 3: Evolution from Assessments 1 & 2
 
-## How This Design Builds on Your Previous Work
+## How This Design Builds on Previous Work
 
 ### From Assessment 1 (n8n Workflow Automation)
 

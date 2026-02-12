@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# === NEW IMPORTS ===
 from google import genai
 from google.genai import types
 
@@ -233,20 +232,18 @@ async def call_llm(prompt: str, max_retries: int = 3) -> dict:
                 if not gemini_client:
                     return {"success": False, "error": "Gemini client not initialized"}
                 
-                # UPDATE: Added response_mime_type and increased tokens
                 response = await gemini_client.aio.models.generate_content(
                     model=LLM_MODEL,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         temperature=0.3,
-                        max_output_tokens=2000,  # Increased from 500 to prevent cutoff
-                        response_mime_type="application/json" # Force valid JSON
+                        max_output_tokens=2000, 
+                        response_mime_type="application/json"
                     )
                 )
                 content = response.text
                 
             else:
-                # === EXISTING OPENAI IMPLEMENTATION ===
                 headers = {
                     "Authorization": f"Bearer {LLM_API_KEY}",
                     "Content-Type": "application/json"
@@ -255,7 +252,7 @@ async def call_llm(prompt: str, max_retries: int = 3) -> dict:
                     "model": LLM_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
-                    "max_tokens": 1000 # Increased for safety
+                    "max_tokens": 1000 
                 }
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(
@@ -267,9 +264,7 @@ async def call_llm(prompt: str, max_retries: int = 3) -> dict:
                     result = response.json()
                     content = result['choices'][0]['message']['content']
 
-            # Common JSON parsing logic
             try:
-                # Clean up markdown if present (Gemini often wraps in ```json ... ```)
                 cleaned_content = content.strip()
                 if '```json' in cleaned_content:
                     cleaned_content = cleaned_content.split('```json')[1].split('```')[0]
@@ -334,7 +329,6 @@ async def process_lead_async(lead_id: int, message: str):
         
         if response_result["success"]:
             auto_response = response_result["data"]
-            # Handle both string and dict responses (sometimes LLM returns simple string if prompt isn't strict)
             if isinstance(auto_response, dict):
                 auto_response = auto_response.get("response", str(auto_response))
         else:

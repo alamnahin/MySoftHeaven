@@ -1,7 +1,3 @@
-"""
-RAG Chatbot Backend for Mysoft Heaven (BD) Ltd.
-Human-like implementation with proper error handling and context management.
-"""
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -23,7 +19,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Logging setup - humans configure logging based on environment
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -60,7 +56,6 @@ class DocumentChunk:
 class DocumentStore:
     """
     Manages document chunking, embedding, and retrieval.
-    Humans build this incrementally, starting simple.
     """
     def __init__(self, model_name: str = EMBEDDING_MODEL):
         self.model = SentenceTransformer(model_name)
@@ -72,13 +67,12 @@ class DocumentStore:
     def chunk_document(self, text: str, source: str = "unknown") -> List[DocumentChunk]:
         """
         Chunking strategy: Recursive character splitting with overlap.
-        Humans choose this because it preserves context better than fixed-size.
         """
         chunks = []
         start = 0
         chunk_id = 0
 
-        # Simple sentence-based chunking (humans start simple, iterate later)
+        # Simple sentence-based chunking
         sentences = text.replace('\n', ' ').split('. ')
         current_chunk = []
         current_length = 0
@@ -154,7 +148,7 @@ class DocumentStore:
         # Normalize for cosine similarity (L2 norm)
         faiss.normalize_L2(embeddings)
 
-        # Create FAISS index - humans choose IVF for balance of speed/accuracy
+        # Create FAISS index
         if len(embeddings) < 100:
             # Small dataset: use flat index (exact search)
             self.index = faiss.IndexFlatIP(self.dimension)  # Inner product = cosine for normalized vectors
@@ -289,7 +283,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Conversation memory - simple in-memory store (humans start simple)
+# Conversation memory - simple in-memory store
 conversation_history: Dict[str, List[dict]] = {}
 
 class ChatRequest(BaseModel):
@@ -307,7 +301,6 @@ class ChatResponse(BaseModel):
 def create_system_prompt(context: str, conversation_history: List[dict] = None) -> str:
     """
     Prompt engineering for RAG.
-    Humans iterate on prompts based on observed behavior.
     """
     base_prompt = f"""You are a helpful assistant for Mysoft Heaven (BD) Ltd. 
 Answer questions STRICTLY based on the provided context. 
