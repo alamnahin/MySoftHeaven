@@ -1,0 +1,53 @@
+services:
+  backend:
+    build: ./backend
+    container_name: assessment3-practical-backend
+    ports:
+      - "8010:8000"
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=INFO
+      - DATABASE_PATH=/app/data/app.db
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - JWT_SECRET=${JWT_SECRET:-dev-insecure-secret-change-me}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-120}
+      - USE_REDIS_QUEUE=${USE_REDIS_QUEUE:-true}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QUEUE_NAME=${QUEUE_NAME:-message_queue}
+      - ENABLE_REAL_CRM_SYNC=${ENABLE_REAL_CRM_SYNC:-false}
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    container_name: assessment3-practical-worker
+    command: ["python", "worker.py"]
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=INFO
+      - DATABASE_PATH=/app/data/app.db
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - USE_REDIS_QUEUE=${USE_REDIS_QUEUE:-true}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QUEUE_NAME=${QUEUE_NAME:-message_queue}
+    volumes:
+      - ./backend/data:/app/data
+    healthcheck:
+      disable: true
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: assessment3-practical-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
